@@ -198,6 +198,13 @@
             height: 600,
             parent: 'gameCanvas',
             backgroundColor: '#2c3e50',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 0 },
+                    debug: false // Pots activar-ho per veure les hitboxes
+                }
+            },
             scene: {
                 preload: preload,
                 create: create,
@@ -425,6 +432,12 @@
                 fontSize: '12px',
                 fill: '#ccc'
             });
+
+            // Tecla F1 per activar/desactivar debug de física
+            this.input.keyboard.on('keydown-F1', () => {
+                scene.physics.world.drawDebug = !scene.physics.world.drawDebug;
+                scene.physics.world.debugGraphic.clear();
+            });
             
             // Sol·licitar estat del joc al servidor
             socket.emit('requestGameState');
@@ -526,28 +539,32 @@
 
         function updateLocalPlayer(playerData) {
             if (!player) {
-                // Crear jugador local
+                // Crear jugador local amb física
                 player = {
-                    sprite: scene.add.sprite(playerData.x, playerData.y, 'player1'),
-                        label: scene.add.text(playerData.x, playerData.y - 40, 'TU', 
-                        { fontSize: '14px', fill: '#fff', fontWeight: 'bold' }),
+                    sprite: scene.physics.add.sprite(playerData.x, playerData.y, 'player1'),
+                    label: scene.add.text(playerData.x, playerData.y - 40, 'TU', 
+                            { fontSize: '14px', fill: '#fff', fontWeight: 'bold' }),
                     healthBar: scene.add.rectangle(playerData.x, playerData.y - 25, 40, 5, 0x00ff00),
-                    currentDirection: 'right' // Direcció per defecte
+                    currentDirection: 'right'
                 };
 
-                // Configurar mida del sprite
-                player.sprite.setDisplaySize(80, 40);
+                // Configurar físiques del jugador local
+                player.sprite.setDisplaySize(playerData.width, playerData.height);
+                player.sprite.setCollideWorldBounds(true);
+                player.sprite.body.setSize(playerData.width, playerData.height);
                 
                 // Posicionar elements correctament
                 player.label.setOrigin(0.5, 0.5);
                 player.healthBar.setOrigin(0.5, 0.5);
                 
             } else {
-                // Actualitzar posició
+                // Actualitzar posició des del servidor (autoritari)
+                // En un sistema amb física al client, podríem fer interpolació,
+                // però com la física és al servidor, seguim les posicions exactes
                 player.sprite.x = playerData.x;
                 player.sprite.y = playerData.y;
 
-                player.label.x = playerData.x - 10;
+                player.label.x = playerData.x;
                 player.label.y = playerData.y - 40;
 
                 player.healthBar.x = playerData.x;
@@ -557,7 +574,7 @@
                 const healthWidth = (playerData.health / 100) * 40;
                 player.healthBar.width = healthWidth;
                 player.healthBar.fillColor = playerData.health > 50 ? 0x00ff00 : 
-                                           playerData.health > 25 ? 0xffff00 : 0xff0000;
+                                        playerData.health > 25 ? 0xffff00 : 0xff0000;
             }
             
             // Actualitzar UI
@@ -565,23 +582,30 @@
             playerHealth.textContent = playerData.health;
         }
 
+
         function updateOtherPlayer(playerId, playerData) {
             if (!players[playerId]) {
-                // Crear altre jugador
+                // Crear altre jugador amb física
                 players[playerId] = {
-                    sprite: scene.add.sprite(playerData.x, playerData.y, 'player2'),
-                        label: scene.add.text(playerData.x, playerData.y - 40, 
-                        `Jugador ${playerId.substring(0, 5)}`, 
-                        { fontSize: '12px', fill: '#ccc' }),
+                    sprite: scene.physics.add.sprite(playerData.x, playerData.y, 'player2'),
+                    label: scene.add.text(playerData.x, playerData.y - 40, 
+                            `Jugador ${playerId.substring(0, 5)}`, 
+                            { fontSize: '12px', fill: '#ccc' }),
                     healthBar: scene.add.rectangle(playerData.x, playerData.y - 25, 40, 5, 0x00ff00)
                 };
-              
+                
+                // Configurar físiques dels altres jugadors
+                players[playerId].sprite.setDisplaySize(playerData.width, playerData.height);
+                players[playerId].sprite.body.setSize(playerData.width, playerData.height);
+                players[playerId].sprite.setImmovable(true); // No es mouran per física del client
+            
             } else {
                 // Actualitzar posició amb interpolació suau
                 players[playerId].sprite.x = Phaser.Math.Linear(players[playerId].sprite.x, playerData.x, 0.2);
                 players[playerId].sprite.y = Phaser.Math.Linear(players[playerId].sprite.y, playerData.y, 0.2);
                 
-                players[playerId].label.x = players[playerId].sprite.x - 25;
+                // Actualitzar elements UI
+                players[playerId].label.x = players[playerId].sprite.x;
                 players[playerId].label.y = players[playerId].sprite.y - 40;
                 
                 players[playerId].healthBar.x = players[playerId].sprite.x;
@@ -591,16 +615,17 @@
                 const healthWidth = (playerData.health / 100) * 40;
                 players[playerId].healthBar.width = healthWidth;
                 players[playerId].healthBar.fillColor = playerData.health > 50 ? 0x00ff00 : 
-                                                       playerData.health > 25 ? 0xffff00 : 0xff0000;
+                                                    playerData.health > 25 ? 0xffff00 : 0xff0000;
             }
 
-            // Aplicar flip als altres jugadors si el servidor envia la direcció
+            // Aplicar flip als altres jugadors
             if (playerData.facing === 'left') {
                 players[playerId].sprite.setFlipX(true);
             } else if (playerData.facing === 'right') {
                 players[playerId].sprite.setFlipX(false);
             }
         }
+
 
         function updateBullets(bulletsData) {
             // Eliminar bales antigues

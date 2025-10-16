@@ -25,6 +25,11 @@ class GameServer {
             bullets: [],
             timestamp: Date.now()
         };
+
+        // Propietats de física rectangular
+        this.playerWidth = 80;
+        this.playerHeight = 40;
+        this.playerSpeed = 5;
         
         console.log('🎮 Servidor de joc inicialitzat');
     }
@@ -39,10 +44,80 @@ class GameServer {
             lastUpdate: Date.now(),
             health: 100,
             score: 0,
-            lastShot: 0
+            lastShot: 0,
+            width: this.playerWidth,
+            height: this.playerHeight,
+            isMoving: false
         };
         
         console.log(`➕ Jugador ${socketId} afegit al joc (${Object.keys(this.players).length} jugadors totals)`);
+    }
+
+    // Nou mètode per detectar col·lisions entre jugadors (rectangular)
+    checkPlayerCollisions() {
+        const playerIds = Object.keys(this.players);
+        
+        for (let i = 0; i < playerIds.length; i++) {
+            for (let j = i + 1; j < playerIds.length; j++) {
+                const playerA = this.players[playerIds[i]];
+                const playerB = this.players[playerIds[j]];
+                
+                if (this.checkRectCollision(playerA, playerB)) {
+                    this.resolvePlayerCollision(playerA, playerB);
+                }
+            }
+        }
+    }
+
+    // Detecció de col·lisió rectangular (millorada)
+    checkRectCollision(playerA, playerB) {
+        return playerA.x < playerB.x + playerB.width &&
+               playerA.x + playerA.width > playerB.x &&
+               playerA.y < playerB.y + playerB.height &&
+               playerA.y + playerA.height > playerB.y;
+    }
+
+    // Resolució de col·lisió rectangular
+    resolvePlayerCollision(playerA, playerB) {
+        // Calcular superposició en cada eix
+        const overlapX = Math.min(
+            playerA.x + playerA.width - playerB.x,
+            playerB.x + playerB.width - playerA.x
+        );
+        
+        const overlapY = Math.min(
+            playerA.y + playerA.height - playerB.y,
+            playerB.y + playerB.height - playerA.y
+        );
+        
+        // Resoldre en l'eix de menor superposició
+        if (overlapX < overlapY) {
+            // Col·lisió horitzontal
+            if (playerA.x < playerB.x) {
+                playerA.x = playerB.x - playerA.width;
+            } else {
+                playerA.x = playerB.x + playerB.width;
+            }
+            
+            // Invertir velocitat X per rebot
+            if (playerA.isMoving) {
+                playerA.velocityX = -playerA.velocityX * 0.5;
+                playerB.velocityX = -playerB.velocityX * 0.5;
+            }
+        } else {
+            // Col·lisió vertical
+            if (playerA.y < playerB.y) {
+                playerA.y = playerB.y - playerA.height;
+            } else {
+                playerA.y = playerB.y + playerB.height;
+            }
+            
+            // Invertir velocitat Y per rebot
+            if (playerA.isMoving) {
+                playerA.velocityY = -playerA.velocityY * 0.5;
+                playerB.velocityY = -playerB.velocityY * 0.5;
+            }
+        }
     }
 
     removePlayer(socketId) {
@@ -52,52 +127,72 @@ class GameServer {
         }
     }
 
-    updatePlayerPosition(socketId, input) {
+
+     updatePlayerPosition(socketId, input) {
         if (!this.players[socketId]) return;
 
         const player = this.players[socketId];
-        const speed = 5;
+        const speed = this.playerSpeed;
+        
+        // Guardar l'estat de moviment anterior
+        const wasMoving = player.isMoving;
         
         // Reset velocity
         player.velocityX = 0;
         player.velocityY = 0;
+        player.isMoving = false;
 
         // Aplicar moviment segons la direcció
         switch (input.direction) {
             case 'left':
                 player.velocityX = -speed;
                 player.facing = 'left';
+                player.isMoving = true;
                 break;
             case 'right':
                 player.velocityX = speed;
                 player.facing = 'right';
+                player.isMoving = true;
                 break;
             case 'up':
                 player.velocityY = -speed;
+                player.isMoving = true;
                 break;
             case 'down':
                 player.velocityY = speed;
+                player.isMoving = true;
                 break;
             case 'reset':
                 // Reiniciar posició
                 player.x = Math.random() * 700 + 50;
                 player.y = Math.random() * 500 + 50;
+                player.velocityX = 0;
+                player.velocityY = 0;
                 console.log(`🔄 Jugador ${socketId} reiniciat a nova posició`);
                 break;
         }
 
         // Actualitzar posició si no és reset
         if (input.direction !== 'reset') {
+            // Guardar posició anterior per a resolució de col·lisions
+            const prevX = player.x;
+            const prevY = player.y;
+            
+            // Aplicar velocitat
             player.x += player.velocityX;
             player.y += player.velocityY;
 
             // Mantenir dins dels límits del joc (800x600)
-            player.x = Math.max(20, Math.min(780, player.x));
-            player.y = Math.max(20, Math.min(580, player.y));
+            player.x = Math.max(0, Math.min(800 - player.width, player.x));
+            player.y = Math.max(0, Math.min(600 - player.height, player.y));
+
+            // Comprovar col·lisions amb altres jugadors
+            this.checkPlayerCollisions();
         }
 
         player.lastUpdate = Date.now();
     }
+
 
     createBullet(socketId, data) {
         if (!this.players[socketId]) return;
@@ -142,6 +237,9 @@ class GameServer {
     updateBullets() {
         const now = Date.now();
         
+        // Primer comprovar col·lisions entre jugadors
+        this.checkPlayerCollisions();
+        
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             const bullet = this.bullets[i];
             
@@ -161,13 +259,10 @@ class GameServer {
         }
     }
 
+
     checkBulletCollisions(bullet, bulletIndex) {
-        const bulletRect = {
-            x: bullet.x - 5,
-            y: bullet.y - 5,
-            width: 10,
-            height: 10
-        };
+        const bulletWidth = 10;
+        const bulletHeight = 10;
 
         Object.keys(this.players).forEach(playerId => {
             const player = this.players[playerId];
@@ -175,50 +270,65 @@ class GameServer {
             // No col·lisionar amb el propi jugador
             if (playerId === bullet.playerId) return;
 
-            // Detecció simple de col·lisió rectangle-rectangle
+            // Detecció de col·lisió rectangular
+            const bulletRect = {
+                x: bullet.x - bulletWidth / 2,
+                y: bullet.y - bulletHeight / 2,
+                width: bulletWidth,
+                height: bulletHeight
+            };
+
             const playerRect = {
-                x: player.x - 20,
-                y: player.y - 20,
-                width: 40,
-                height: 40
+                x: player.x,
+                y: player.y,
+                width: player.width,
+                height: player.height
             };
 
             if (this.checkRectCollision(bulletRect, playerRect)) {
                 // Jugador tocat!
-                player.health -= 10;
-                
-                // Actualitzar puntuacions
-                if (player.health > 0) {
-                    player.score = Math.max(0, player.score - 5);
-                }
-                
-                // El que dispara guanya punts
-                if (this.players[bullet.playerId]) {
-                    this.players[bullet.playerId].score += 10;
-                }
-
-                console.log(`🎯 Jugador ${playerId} tocat per ${bullet.playerId}! Salut: ${player.health}%`);
-
-                // Eliminar la bala
-                this.bullets.splice(bulletIndex, 1);
-
-                // Notificar als clients
-                io.emit('playerHit', {
-                    playerHit: playerId,
-                    shooter: bullet.playerId,
-                    health: player.health,
-                    damage: 10
-                });
-
-                // Si la salut arriba a 0, reiniciar jugador
-                if (player.health <= 0) {
-                    this.respawnPlayer(playerId);
-                }
-
-                return; // Sortir del bucle ja que la bala ha col·lisionat
+                this.handlePlayerHit(playerId, bullet.playerId, bulletIndex);
+                return;
             }
         });
     }
+
+    // Extreu la lògica de col·lisió de bales en un mètode separat
+    handlePlayerHit(playerHitId, shooterId, bulletIndex) {
+        const playerHit = this.players[playerHitId];
+        const shooter = this.players[shooterId];
+        
+        playerHit.health -= 10;
+        
+        // Actualitzar puntuacions
+        if (playerHit.health > 0) {
+            playerHit.score = Math.max(0, playerHit.score - 5);
+        }
+        
+        // El que dispara guanya punts
+        if (shooter) {
+            shooter.score += 10;
+        }
+
+        console.log(`🎯 Jugador ${playerHitId} tocat per ${shooterId}! Salut: ${playerHit.health}%`);
+
+        // Eliminar la bala
+        this.bullets.splice(bulletIndex, 1);
+
+        // Notificar als clients
+        io.emit('playerHit', {
+            playerHit: playerHitId,
+            shooter: shooterId,
+            health: playerHit.health,
+            damage: 10
+        });
+
+        // Si la salut arriba a 0, reiniciar jugador
+        if (playerHit.health <= 0) {
+            this.respawnPlayer(playerHitId);
+        }
+    }
+
 
     checkRectCollision(rect1, rect2) {
         return rect1.x < rect2.x + rect2.width &&
