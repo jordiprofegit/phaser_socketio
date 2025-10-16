@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Joc Phaser 3 - Multijugador</title>
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+        font-family: 'Arial', sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100vh;
+        color: white;
+    }
+    
+    .container {
+        text-align: center;
+        max-width: 800px;
+        margin: 20px;
+    }
+    
+    h1 {
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        margin-bottom: 10px;
+    }
+    
+    .game-container {
+        border: 3px solid #fff;
+        border-radius: 10px;
+        box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        margin: 20px 0;
+        overflow: hidden;
+    }
+    
+    .controls {
+        background: rgba(0,0,0,0.7);
+        padding: 15px;
+        border-radius: 10px;
+        margin: 15px 0;
+        width: 800px;
+        box-sizing: border-box;
+    }
+    
+    .status {
+        background: rgba(255,255,255,0.1);
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+        transition: all 0.3s ease;
+        width: 800px;
+        box-sizing: border-box;
+    }
+    
+    .player-stats {
+        display: flex;
+        justify-content: space-around;
+        margin: 10px 0;
+        width: 800px;
+        box-sizing: border-box;
+    }
+    
+    .stat {
+        background: rgba(0,0,0,0.5);
+        padding: 8px 15px;
+        border-radius: 5px;
+        margin: 0 5px;
+        flex: 1;
+    }
+    
+    .chat-container {
+        background: rgba(0,0,0,0.7);
+        padding: 15px;
+        border-radius: 10px;
+        margin: 15px 0;
+        width: 800px; /* 👈 Mateixa amplada que el joc */
+        box-sizing: border-box; /* 👈 Important! */
+    }
+    
+    #chatMessages {
+        height: 100px;
+        overflow-y: auto;
+        background: rgba(255,255,255,0.1);
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+        text-align: left;
+        width: 100%;
+        box-sizing: border-box;
+    }
+    
+    .chat-message {
+        margin-bottom: 5px;
+        padding: 3px;
+        border-radius: 3px;
+    }
+    
+    .chat-message.own {
+        background: rgba(0, 255, 0, 0.1);
+    }
+    
+    .chat-message.other {
+        background: rgba(255, 255, 255, 0.1);
+    }
+    
+    .chat-message.system {
+        background: rgba(255, 255, 0, 0.1);
+        font-style: italic;
+    }
+    
+    .chat-message.damage {
+        background: rgba(255, 0, 0, 0.1);
+    }
+    
+    .chat-message.reward {
+        background: rgba(0, 255, 0, 0.1);
+    }
+    
+    .chat-input-container {
+        display: flex;
+        gap: 10px;
+    }
+    
+    #chatInput {
+        flex: 1;
+        padding: 8px;
+        border: none;
+        border-radius: 5px;
+        box-sizing: border-box;
+    }
+    
+    #sendChat {
+        padding: 8px 15px;
+        background: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    
+    #sendChat:hover {
+        background: #45a049;
+    }
+</style></head>
+<body>
+    <div class="container">
+        <h1>🎮 Joc Phaser 3 Multijugador</h1>
+        <p>Connecta't amb altres jugadors i diverteix-te!</p>
+        
+        <div class="status" id="connectionStatus">
+            🔴 Desconnectat - Esperant servidor...
+        </div>
+        
+        <div class="player-stats">
+            <div class="stat">Jugadors: <span id="playerCount">0</span></div>
+            <div class="stat">El teu ID: <span id="playerId">-</span></div>
+            <div class="stat">Punts: <span id="playerScore">0</span></div>
+            <div class="stat">Salut: <span id="playerHealth">100</span>%</div>
+        </div>
+        
+        <div class="game-container">
+            <div id="gameCanvas"></div>
+        </div>
+        
+        <div class="controls">
+            <h3>🎯 Controls</h3>
+            <p><strong>WASD</strong> o <strong>Fletxes</strong> - Moure el jugador</p>
+            <p><strong>Espai</strong> - Disparar</p>
+            <p><strong>R</strong> - Reiniciar posició</p>
+        </div>
+        
+        <div class="chat-container">
+            <h3>💬 Xat del Joc</h3>
+            <div id="chatMessages"></div>
+            <div class="chat-input-container">
+                <input type="text" id="chatInput" placeholder="Escriu un missatge..." maxlength="100">
+                <button id="sendChat">Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Socket.IO Client -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    
+    <!-- Phaser 3 via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+    
+    <!-- El nostre joc -->
+    <script>
+        // Configuració del joc
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            parent: 'gameCanvas',
+            backgroundColor: '#2c3e50',
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            }
+        };
+
+        // Variables globals del joc
+        let game;
+        let socket;
+        let players = {};
+        let bullets = {};
+        let player;
+        let cursors;
+        let wasd;
+        let spacebar;
+        let keyR;
+        let connectionStatus;
+        let playerCount;
+        let playerId;
+        let playerScore;
+        let playerHealth;
+        let chatInput;
+        let sendChat;
+        let chatMessages;
+        let scene;
+        // Variable global per controlar l'estat del focus
+        let isChatFocused = false;
+
+        // Inicialitza el joc quan la pàgina es carregui
+        window.addEventListener('load', () => {
+            // Inicialitza Socket.IO (canvia la URL si cal)
+            socket = io('http://localhost:3000');
+            
+            // Configura els listeners de Socket.IO
+            setupSocketListeners();
+            
+            // Inicialitza el joc Phaser
+            game = new Phaser.Game(config);
+            
+            // Referències als elements UI
+            connectionStatus = document.getElementById('connectionStatus');
+            playerCount = document.getElementById('playerCount');
+            playerId = document.getElementById('playerId');
+            playerScore = document.getElementById('playerScore');
+            playerHealth = document.getElementById('playerHealth');
+            chatInput = document.getElementById('chatInput');
+            sendChat = document.getElementById('sendChat');
+            chatMessages = document.getElementById('chatMessages');
+            
+            // Configura el xat
+            setupChat();
+        });
+
+        function setupSocketListeners() {
+            // Event de connexió
+            socket.on('connect', () => {
+                console.log('✅ Connectat al servidor amb ID:', socket.id);
+                connectionStatus.textContent = '🟢 Connectat al servidor';
+                connectionStatus.style.background = 'rgba(0,255,0,0.2)';
+                playerId.textContent = socket.id.substring(0, 8) + '...';
+                
+                // Enviar missatge de benvinguda al xat
+                addChatMessage('Sistema', `Jugador ${socket.id.substring(0, 8)} s'ha unit al joc!`, 'system');
+            });
+
+            // Event de desconnexió
+            socket.on('disconnect', () => {
+                console.log('❌ Desconnectat del servidor');
+                connectionStatus.textContent = '🔴 Desconnectat - Intentant reconnectar...';
+                connectionStatus.style.background = 'rgba(255,0,0,0.2)';
+            });
+
+            // Rebre l'estat del joc
+            socket.on('gameState', (gameState) => {
+                updateGameState(gameState);
+            });
+
+            // Rebre informació de connexions
+            socket.on('playersCount', (count) => {
+                playerCount.textContent = count;
+            });
+
+            // Rebre missatges del xat
+            socket.on('chatMessage', (data) => {
+                const playerName = data.playerId === socket.id ? 'TU' : `Jugador ${data.playerId.substring(0, 8)}`;
+                addChatMessage(playerName, data.message, data.playerId === socket.id ? 'own' : 'other');
+            });
+
+            // Rebre notificacions de danys
+            socket.on('playerHit', (data) => {
+                if (data.playerHit === socket.id) {
+                    addChatMessage('Sistema', `💥 Et van tocar! Salut: ${data.health}%`, 'damage');
+                }
+                if (data.shooter === socket.id) {
+                    addChatMessage('Sistema', `🎯 Vas tocar a un oponent! +10 punts`, 'reward');
+                }
+            });
+        }
+
+        // Al setupChat(), afegir event listeners per al focus
+        function setupChat() {
+            sendChat.addEventListener('click', sendChatMessage);
+            
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendChatMessage();
+                }
+                // Aturar la propagació perquè Phaser no rebi la tecla
+                e.stopPropagation();
+            });
+            
+            // 👈 IMPORTANT: Capturar TOTES les tecles abans que Phaser les vegi
+            chatInput.addEventListener('keydown', (e) => {
+                // Aturar la propagació immediatament
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                
+                // Permetre ESC per sortir del xat
+                if (e.key === 'Escape') {
+                    chatInput.blur();
+                }
+            });
+            
+            chatInput.addEventListener('keyup', (e) => {
+                e.stopPropagation();
+            });
+            
+            chatInput.addEventListener('focus', () => {
+                isChatFocused = true;
+                console.log('Xat enfocat - controls del joc desactivats');
+                
+                // 👈 Desactivar COMPLETAMENT el teclat de Phaser
+                if (scene && scene.input && scene.input.keyboard) {
+                    scene.input.keyboard.enabled = false;
+                }
+            });
+            
+            chatInput.addEventListener('blur', () => {
+                isChatFocused = false;
+                console.log('Xat no enfocat - controls del joc activats');
+                
+                // 👈 Reactivar el teclat de Phaser
+                if (scene && scene.input && scene.input.keyboard) {
+                    scene.input.keyboard.enabled = true;
+                    
+                    // Recrear les referències de les tecles
+                    cursors = scene.input.keyboard.createCursorKeys();
+                    wasd = {
+                        W: scene.input.keyboard.addKey('W'),
+                        A: scene.input.keyboard.addKey('A'),
+                        S: scene.input.keyboard.addKey('S'),
+                        D: scene.input.keyboard.addKey('D')
+                    };
+                    spacebar = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+                    keyR = scene.input.keyboard.addKey('R');
+                }
+            });
+            
+            // Permetre clic a qualsevol part del xat per enfocar
+            chatMessages.addEventListener('click', () => {
+                chatInput.focus();
+            });
+            
+            // També prevenir que el clic al botó propagi als events del joc
+            sendChat.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+            });
+        }
+
+        function sendChatMessage() {
+            const message = chatInput.value.trim();
+            if (message) {
+                socket.emit('chatMessage', { message: message });
+                chatInput.value = '';
+            }
+        }
+
+        function addChatMessage(sender, message, type = 'normal') {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            messageDiv.innerHTML = `<strong>${sender}:</strong> ${message} <em>(${timestamp})</em>`;
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Funcions de Phaser
+        function preload() {
+            // Crear textures base64 per als sprites
+            this.load.image('player1', 'assets/player.png');
+            this.load.image('player2', 'assets/player2.png');
+            this.load.image('bullet', 'assets/bullet.png');
+            this.load.image('background', 'assets/background.png');
+        }
+
+        function create() {
+            scene = this;
+            
+            // 1. FONS PRINCIPAL - sense grid
+            const background = this.add.sprite(400, 300, 'background');
+            background.setDisplaySize(800, 600);
+            background.setDepth(-1); // Assegurar que queda al fons
+            
+            // Inicialitzar inputs
+            cursors = this.input.keyboard.createCursorKeys();
+            wasd = {
+                W: this.input.keyboard.addKey('W'),
+                A: this.input.keyboard.addKey('A'),
+                S: this.input.keyboard.addKey('S'),
+                D: this.input.keyboard.addKey('D')
+            };
+            spacebar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+            keyR = this.input.keyboard.addKey('R');
+            
+            // Text informatiu
+            this.add.text(10, 10, 'Joc Phaser 3 + Socket.IO - Multijugador', {
+                fontSize: '16px',
+                fill: '#fff'
+            });
+            
+            this.add.text(10, 30, 'Mou-te amb WASD/Fletxes | Dispara amb ESPAI', {
+                fontSize: '12px',
+                fill: '#ccc'
+            });
+            
+            // Sol·licitar estat del joc al servidor
+            socket.emit('requestGameState');
+        }
+
+        function update() {
+            // No processar inputs del joc si el xat està enfocat
+            if (isChatFocused) {
+                return;
+            }
+
+            // Verificar que el teclat estigui activat
+            if (!scene.input.keyboard.enabled) {
+                return;
+            }
+
+            // Enviar inputs al servidor i controlar flip
+            let moving = false;
+            let directionX = 0;
+            
+            if (cursors.left.isDown || wasd.A.isDown) {
+                socket.emit('playerInput', { direction: 'left' });
+                moving = true;
+                directionX = -1;
+            }
+            if (cursors.right.isDown || wasd.D.isDown) {
+                socket.emit('playerInput', { direction: 'right' });
+                moving = true;
+                directionX = 1;
+            }
+            if (cursors.up.isDown || wasd.W.isDown) {
+                socket.emit('playerInput', { direction: 'up' });
+                moving = true;
+            }
+            if (cursors.down.isDown || wasd.S.isDown) {
+                socket.emit('playerInput', { direction: 'down' });
+                moving = true;
+            }
+            
+            // Aplicar flip horitzontal al jugador local
+            if (player && player.sprite) {
+                if (directionX === -1) {
+                    // Anant a l'esquerra - flipX true
+                    player.sprite.setFlipX(true);
+                    player.currentDirection = 'left';
+                } else if (directionX === 1) {
+                    // Anant a la dreta - flipX false (posició normal)
+                    player.sprite.setFlipX(false);
+                    player.currentDirection = 'right';
+                }
+                // Si no es mou horitzontalment, manté l'últim flip
+            }
+            
+            if (Phaser.Input.Keyboard.JustDown(spacebar)) {
+                socket.emit('playerShoot', { 
+                    timestamp: Date.now(),
+                    direction: player?.currentDirection || 'right' // Direcció per defecte: dreta
+                }); 
+            }
+            
+            if (Phaser.Input.Keyboard.JustDown(keyR)) {
+                socket.emit('playerInput', { direction: 'reset' });
+            }
+        }
+        // Funcions per actualitzar l'estat del joc
+        function updateGameState(gameState) {
+            // Actualitzar o crear jugadors
+            Object.keys(gameState.players).forEach(playerId => {
+                const playerData = gameState.players[playerId];
+                
+                if (playerId === socket.id) {
+                    // És el jugador local
+                    updateLocalPlayer(playerData);
+                } else {
+                    // És un altre jugador
+                    updateOtherPlayer(playerId, playerData);
+                }
+            });
+
+            // Eliminar jugadors que ja no estan
+            Object.keys(players).forEach(playerId => {
+                if (!gameState.players[playerId]) {
+                    if (players[playerId].sprite) {
+                        players[playerId].sprite.destroy();
+                    }
+                    if (players[playerId].label) {
+                        players[playerId].label.destroy();
+                    }
+                    if (players[playerId].healthBar) {
+                        players[playerId].healthBar.destroy();
+                    }
+                    delete players[playerId];
+                }
+            });
+
+            // Actualitzar bales
+            updateBullets(gameState.bullets);
+        }
+
+        function updateLocalPlayer(playerData) {
+            if (!player) {
+                // Crear jugador local
+                player = {
+                    sprite: scene.add.sprite(playerData.x, playerData.y, 'player1'),
+                        label: scene.add.text(playerData.x, playerData.y - 40, 'TU', 
+                        { fontSize: '14px', fill: '#fff', fontWeight: 'bold' }),
+                    healthBar: scene.add.rectangle(playerData.x, playerData.y - 25, 40, 5, 0x00ff00),
+                    currentDirection: 'right' // Direcció per defecte
+                };
+
+                // Configurar mida del sprite
+                player.sprite.setDisplaySize(80, 40);
+                
+                // Posicionar elements correctament
+                player.label.setOrigin(0.5, 0.5);
+                player.healthBar.setOrigin(0.5, 0.5);
+                
+            } else {
+                // Actualitzar posició
+                player.sprite.x = playerData.x;
+                player.sprite.y = playerData.y;
+
+                player.label.x = playerData.x - 10;
+                player.label.y = playerData.y - 40;
+
+                player.healthBar.x = playerData.x;
+                player.healthBar.y = playerData.y - 25;
+                
+                // Actualitzar barra de salut
+                const healthWidth = (playerData.health / 100) * 40;
+                player.healthBar.width = healthWidth;
+                player.healthBar.fillColor = playerData.health > 50 ? 0x00ff00 : 
+                                           playerData.health > 25 ? 0xffff00 : 0xff0000;
+            }
+            
+            // Actualitzar UI
+            playerScore.textContent = playerData.score;
+            playerHealth.textContent = playerData.health;
+        }
+
+        function updateOtherPlayer(playerId, playerData) {
+            if (!players[playerId]) {
+                // Crear altre jugador
+                players[playerId] = {
+                    sprite: scene.add.sprite(playerData.x, playerData.y, 'player2'),
+                        label: scene.add.text(playerData.x, playerData.y - 40, 
+                        `Jugador ${playerId.substring(0, 5)}`, 
+                        { fontSize: '12px', fill: '#ccc' }),
+                    healthBar: scene.add.rectangle(playerData.x, playerData.y - 25, 40, 5, 0x00ff00)
+                };
+              
+            } else {
+                // Actualitzar posició amb interpolació suau
+                players[playerId].sprite.x = Phaser.Math.Linear(players[playerId].sprite.x, playerData.x, 0.2);
+                players[playerId].sprite.y = Phaser.Math.Linear(players[playerId].sprite.y, playerData.y, 0.2);
+                
+                players[playerId].label.x = players[playerId].sprite.x - 25;
+                players[playerId].label.y = players[playerId].sprite.y - 40;
+                
+                players[playerId].healthBar.x = players[playerId].sprite.x;
+                players[playerId].healthBar.y = players[playerId].sprite.y - 25;
+                
+                // Actualitzar barra de salut
+                const healthWidth = (playerData.health / 100) * 40;
+                players[playerId].healthBar.width = healthWidth;
+                players[playerId].healthBar.fillColor = playerData.health > 50 ? 0x00ff00 : 
+                                                       playerData.health > 25 ? 0xffff00 : 0xff0000;
+            }
+
+            // Aplicar flip als altres jugadors si el servidor envia la direcció
+            if (playerData.facing === 'left') {
+                players[playerId].sprite.setFlipX(true);
+            } else if (playerData.facing === 'right') {
+                players[playerId].sprite.setFlipX(false);
+            }
+        }
+
+        function updateBullets(bulletsData) {
+            // Eliminar bales antigues
+            Object.keys(bullets).forEach(bulletId => {
+                if (!bulletsData.find(b => b.id === bulletId)) {
+                    bullets[bulletId].destroy();
+                    delete bullets[bulletId];
+                }
+            });
+
+            // Crear o actualitzar bales
+            bulletsData.forEach(bulletData => {
+                if (!bullets[bulletData.id]) {
+                    bullets[bulletData.id] = scene.add.sprite(
+                        bulletData.x, 
+                        bulletData.y, 
+                        'bullet'
+                    );
+
+                    // Configurar mida de la bala
+                    bullets[bulletData.id].setDisplaySize(15, 15);
+
+                    // Aplicar flip segons la direcció
+                    if (bulletData.direction === 'left') {
+                        bullets[bulletData.id].setFlipX(true);
+                    } else {
+                        bullets[bulletData.id].setFlipX(false);
+                    }
+                } else {
+                    bullets[bulletData.id].x = bulletData.x;
+                    bullets[bulletData.id].y = bulletData.y;
+                }
+            });
+        }
+    </script>
+</body>
+</html>
