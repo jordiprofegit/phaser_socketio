@@ -432,13 +432,7 @@
                 fontSize: '12px',
                 fill: '#ccc'
             });
-
-            // Tecla F1 per activar/desactivar debug de física
-            this.input.keyboard.on('keydown-F1', () => {
-                scene.physics.world.drawDebug = !scene.physics.world.drawDebug;
-                scene.physics.world.debugGraphic.clear();
-            });
-            
+           
             // Sol·licitar estat del joc al servidor
             socket.emit('requestGameState');
         }
